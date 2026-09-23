@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trade-sentiment"
+version = "0.1.0"
+description = "Social/news sentiment engine for the trade-suite: chatter monitoring, finance-tuned tone scoring, and sentiment-pop detection"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "crieck2010" }]
+keywords = ["trading", "sentiment", "nlp", "social", "finance"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Office/Business :: Financial",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+trade-sentiment = "trade_sentiment.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/crieck2010/trade-sentiment"
+Repository = "https://github.com/crieck2010/trade-sentiment"
+
+[tool.setuptools.packages.find]
+where = ["src"]
