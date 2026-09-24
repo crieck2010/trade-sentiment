@@ -61,6 +61,36 @@ failures fall back to the lexicon per-mention. Use it to catch sarcasm
 and novel slang the lexicon misses; keep `blend ≤ 0.5` until the advisor
 is benchmarked.
 
+## FinBERT rescoring adapter (v0.2.0, optional)
+
+`finbert.rescore_with_finbert(scored, blend=0.5)` is the same seam with
+a finance-tuned transformer behind it instead of a generic LLM:
+`ProsusAI/finbert` (BERT-base fine-tuned on the Financial PhraseBank)
+reads each mention with attention and returns a context-aware tone.
+`pipeline.scan(..., rescorer=finbert.finbert_rescorer(blend=0.5))`
+applies it inside a whole scan with one shared model load.
+
+The math (full treatment in `docs/FINBERT.md`):
+
+```
+P(c)    = softmax(logits)_c                    # class probabilities
+polarity = P(positive) − P(negative)           # ∈ [−1, 1]
+blended  = (1 − β) · lexicon + β · finbert     # β = 0.5 default
+```
+
+Design points that keep the suite's contracts:
+
+- **Optional.** `torch`/`transformers` import lazily; without them the
+  call returns lexicon scores instead of raising. Core stays stdlib-only.
+- **Same seam.** Plain `ScoredMention` lists in and out, like
+  `rescore_with_llm` — dashboards, agents, and the CLI need no changes.
+- **Explainability preserved.** `hits` and `magnitude` stay lexicon-side;
+  FinBERT moves the tone, the lexicon keeps the receipt.
+- **Batched.** One `FinBERTScorer` per scan, forward passes in batches
+  (default 32) under `torch.no_grad()`; per-batch fail-soft.
+
+Keep `blend ≤ 0.5` until benchmarked on your own labeled chatter.
+
 ## Limitations
 
 - Heuristic, not a model: sarcasm ("great, another dilution 🙄"),

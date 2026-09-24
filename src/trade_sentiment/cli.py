@@ -30,12 +30,19 @@ def cmd_scan(args, cfg: dict) -> int:
     if not symbols:
         print("no symbols given (args or config 'symbols')", file=sys.stderr)
         return 2
+    rescorer = None
+    if (args.rescore or cfg.get("rescore", "none")) == "finbert":
+        from .finbert import finbert_rescorer
+        rescorer = finbert_rescorer(
+            blend=args.blend if args.blend is not None
+            else cfg.get("blend", 0.5))
     pops = scan(
         symbols,
         source_names=args.sources or cfg.get("sources"),
         window_hours=args.window or cfg.get("window_hours", 24),
         min_mentions=args.min_mentions,
         limit_per_source=args.limit,
+        rescorer=rescorer,
     )
     if args.format == "ideas":
         print(json.dumps(to_agent_ideas(pops), indent=2))
@@ -51,6 +58,18 @@ def cmd_scan(args, cfg: dict) -> int:
 
 def cmd_score(args, cfg: dict) -> int:
     text = args.text or sys.stdin.read()
+    model = args.model or cfg.get("model", "lexicon")
+    if model == "finbert":
+        from .finbert import FinBERTError, FinBERTScorer
+        try:
+            polarity = FinBERTScorer()(text)
+        except FinBERTError as exc:
+            print(f"finbert unavailable: {exc}", file=sys.stderr)
+            return 3
+        from .models import label_for
+        label = label_for(polarity)
+        print(f"polarity={polarity:.4f} label={label.value} (finbert, opaque)")
+        return 0
     sm = score_text(text)
     print(f"polarity={sm.polarity} label={sm.label.value} "
           f"magnitude={sm.magnitude}")
@@ -85,11 +104,18 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--format", choices=["verdicts", "json", "ideas", "overlay"],
                    default="verdicts")
     s.add_argument("--verbose", action="store_true")
+    s.add_argument("--rescore", choices=["none", "finbert"], default=None,
+                   help="blend lexicon tone with FinBERT (needs torch + "
+                        "transformers; default none)")
+    s.add_argument("--blend", type=float, default=None,
+                   help="FinBERT weight 0..1 (default 0.5)")
     s.set_defaults(func=cmd_scan)
 
     s = sub.add_parser("score", help="score one piece of text")
     _add_config(s)
     s.add_argument("text", nargs="?", help="text (or stdin)")
+    s.add_argument("--model", choices=["lexicon", "finbert"],
+                   default=None, help="scorer (default lexicon)")
     s.set_defaults(func=cmd_score)
 
     s = sub.add_parser("sources", help="list available sources")

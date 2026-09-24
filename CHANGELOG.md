@@ -1,5 +1,26 @@
 # Changelog — trade-sentiment
 
+## v0.2.0 (2026-09-24)
+
+- **FinBERT rescoring adapter** (`trade_sentiment.finbert`, optional):
+  blends lexicon tone with ProsusAI/finbert — `FinBERTScorer` (batched
+  inference, lazy `torch`/`transformers`, one shared load per scan),
+  `logits_to_polarity` (softmax → P(positive) − P(negative)), and
+  `rescore_with_finbert` / `finbert_rescorer`, mirroring the existing
+  `rescore_with_llm` seam with plain `ScoredMention` lists in and out.
+  Without the ML stack installed everything degrades to pure lexicon
+  instead of raising; core stays stdlib-only.
+- `pipeline.scan()` gains an optional fail-soft `rescorer` hook applied
+  per symbol after lexicon scoring; CLI gets `scan --rescore finbert
+  --blend` and `score --model finbert`.
+- Docs: new `docs/FINBERT.md` (setup, usage, the maths, scaling,
+  limitations), `docs/SCORING.md` + `docs/ARCHITECTURE.md` updated,
+  README gains a FinBERT section with "The maths".
+  `examples/finbert_example.py` runs without the ML stack via a fake
+  scorer.
+- 22 new tests (all torch-free; one live-model test gated behind
+  `TRADE_SENTIMENT_FINBERT_LIVE=1`). 62 passed, 1 skipped.
+
 ## v0.1.0 (2026-09-23)
 
 Initial release.

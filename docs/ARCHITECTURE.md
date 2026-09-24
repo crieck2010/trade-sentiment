@@ -18,11 +18,19 @@ src/trade_sentiment/
                     # + the 0-10 scale functions (bullishness_10, conviction_10)
     lexicon.py      # finance-tuned word/phrase/emoji scores, negations
     scoring.py      # deterministic scorer + LLM rescoring seam
+    finbert.py      # OPTIONAL FinBERT adapter: FinBERTScorer (lazy
+                    # torch/transformers), logits_to_polarity, the
+                    # rescore_with_finbert seam + finbert_rescorer() for
+                    # pipeline.scan(rescorer=...).  Import-safe without
+                    # the ML stack; degrades to lexicon when absent.
     sources.py      # Source ABC + Reddit / StockTwits / News adapters
     aggregation.py  # windowing, baselines, burst detection, pop ranking
-    pipeline.py     # scan(): threaded fetch → score → aggregate → pops
+    pipeline.py     # scan(): threaded fetch → score → [rescore] →
+                    # aggregate → pops.  The optional rescorer hook runs
+                    # per symbol after lexicon scoring, fail-soft.
     adapters.py     # to_agent_ideas / to_signal_overlay / to_dashboard_rows
     cli.py          # scan / score / sources / license / update-check
+                    # (+ scan --rescore finbert --blend, score --model)
     licensing.py    # license-key + update-check hooks (suite convention)
 ```
 
@@ -34,6 +42,11 @@ sources.fetch(symbol)            (thread pool, one job per symbol×source)
         ▼
 scoring.score_mentions()         (pure, ~thousands/sec)
         │ ScoredMention[]  (polarity, label, hits)
+        ▼
+[optional] rescorer hook      (per symbol, fail-soft: a bad rescorer
+        │                    keeps lexicon scores)
+        │ e.g. finbert.finbert_rescorer(blend=0.5) → blended tone,
+        │      lexicon hits/magnitude preserved
         ▼
 aggregation.burst_window()       (time-sliced baseline, no history needed)
         │ SentimentWindow  (n, mean_polarity, volume_zscore, tone_shift,
@@ -62,6 +75,7 @@ windows (SQLite) and use real multi-day baselines; the `aggregate()`
 |---|---|---|
 | Fetch latency | thread pool across symbol×source; per-source politeness delays | async + persistent cache |
 | Scoring throughput | lexicon scan, single pass | unchanged — already cheap |
+| FinBERT (optional) | n/a | lazy torch/transformers; one shared `FinBERTScorer` per scan; batched forward passes (default 32) under `torch.no_grad()`; CPU-friendly; fail-soft per batch |
 | History | in-memory per scan | SQLite window store for real baselines |
 | Source count | 3 keyless | X (keyed), broker feeds via `Source` ABC |
 | Rate limits | polite delays, fail-soft per source | per-source token buckets |

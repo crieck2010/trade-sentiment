@@ -64,6 +64,47 @@ So *"9/10 bullishness with 5 mentions"* (conviction ~5) reads differently from
 *"6/10 bullishness with 200 mentions"* (conviction ~9). See `docs/SCORING.md`
 for the exact formulas.
 
+## FinBERT rescoring (v0.2.0, optional)
+
+The lexicon is fast and explainable but context-blind. The optional
+FinBERT adapter blends its tone with
+[FinBERT](https://huggingface.co/ProsusAI/finbert) — a BERT model
+fine-tuned on finance professionals' labels — for negation scope,
+slang, and finance-specific word senses the lexicon misses:
+
+```bash
+pip install torch transformers   # CPU torch is fine; ~440 MB model download on first use
+trade-sentiment score --model finbert "earnings beat, guidance raised"
+trade-sentiment scan AAPL NVDA --rescore finbert --blend 0.5
+```
+
+```python
+from trade_sentiment import scan
+from trade_sentiment.finbert import finbert_rescorer
+
+# one shared model load across all symbols; lexicon fallback if the
+# ML stack is absent
+pops = scan(["AAPL", "NVDA"], rescorer=finbert_rescorer(blend=0.5))
+```
+
+**The maths.** *What you learn:* a context-aware tone per mention in
+[−1, 1], blended with the auditable lexicon score — FinBERT moves the
+tone, the lexicon keeps the receipt (`hits`, `magnitude` stay
+lexicon-side). *Why it matters:* hand-written lexicons can't cover novel
+phrasing ("priced in", "inverse Cramer") or negation scope ("not exactly
+a blowout"); a model trained on labeled financial sentences
+generalizes. The cost is opacity and speed — hence a blend, not a
+replacement.
+
+```
+P(c)     = softmax(logits)_c              # FinBERT class probabilities
+polarity = P(positive) − P(negative)      # ∈ [−1, 1]; neutral mass → 0
+blended  = (1 − β) · lexicon + β · finbert   # β = 0.5 default
+```
+
+Keep `β ≤ 0.5` until benchmarked on your own labeled chatter. Full
+detail: `docs/FINBERT.md`.
+
 ## Sources (v0.1.0)
 
 | Source | Access | Notes |
@@ -103,14 +144,15 @@ Full detail: `docs/ARCHITECTURE.md`, `docs/SCORING.md`.
 trade-sentiment scan SYMBOLS... [--sources reddit stocktwits news]
                                 [--window HOURS] [--min-mentions N]
                                 [--limit N] [--format verdicts|json|ideas|overlay]
-trade-sentiment score [TEXT]     # or pipe via stdin
+                                [--rescore finbert] [--blend 0.5]
+trade-sentiment score [TEXT] [--model lexicon|finbert]   # or pipe via stdin
 trade-sentiment sources
 trade-sentiment license
 trade-sentiment update-check
 ```
 
 `--config` works both before and after the subcommand; config JSON keys:
-`symbols`, `sources`, `window_hours`.
+`symbols`, `sources`, `window_hours`, `rescore`, `blend`, `model`.
 
 ## 3×-daily runner
 
@@ -123,8 +165,8 @@ trade-sentiment update-check
 ## Limitations (read these)
 
 - Lexicon scoring is a heuristic, not a model: sarcasm, memes, and novel slang
-  ("priced in", "inverse Cramer") can mislead. The LLM-rescoring seam exists
-  for this reason.
+  ("priced in", "inverse Cramer") can mislead. The LLM-rescoring seam and the
+  optional FinBERT adapter exist for this reason.
 - Social chatter skews bullish and noisy; treat pops as *candidates for
   research*, not signals.
 - Free sources are rate-limited and delayed; Reddit/StockTwits can throttle.
