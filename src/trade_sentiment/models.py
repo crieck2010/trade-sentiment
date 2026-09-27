@@ -153,3 +153,49 @@ class SentimentPop:
             "drivers": list(self.drivers),
             "verdict": self.verdict,
         }
+
+
+@dataclass(frozen=True)
+class ArchivedObservation:
+    """One sentiment observation in the point-in-time archive.
+
+    The two timestamps are the whole point:
+
+    - ``observed_at`` — the as-of time the sentiment *refers to*.  For a
+      scored mention this is the source publication timestamp.  An
+      observation timestamped T must never incorporate information that
+      only became available after T.
+    - ``recorded_at`` — when the observation *entered the archive*
+      (the fetch time).  Always >= ``observed_at``.
+
+    The no-lookahead contract: any screening decision made at decision
+    time D may use only observations with ``recorded_at <= D``.  Queries
+    on ``observed_at`` alone are not point-in-time safe.
+    """
+
+    symbol: str
+    source: str
+    observed_at: datetime
+    recorded_at: datetime
+    polarity: float | None = None  # -1..1 tone, None if unscored
+    magnitude: float | None = None  # 0..1, None if unscored
+    label: str = ""
+    text: str = ""  # raw reference text (truncated at record time)
+    url: str = ""  # raw reference URI
+    topic: str = ""  # optional free grouping key beyond symbol
+    kind: str = "mention"  # "mention" today; aggregate kinds later
+    meta: dict = field(default_factory=dict)  # scorer name, hits, etc.
+
+    def to_dict(self) -> dict:
+        return {
+            "symbol": self.symbol, "source": self.source,
+            "topic": self.topic, "kind": self.kind,
+            "observed_at": self.observed_at.isoformat(),
+            "recorded_at": self.recorded_at.isoformat(),
+            "polarity": (round(self.polarity, 4)
+                         if self.polarity is not None else None),
+            "magnitude": (round(self.magnitude, 4)
+                          if self.magnitude is not None else None),
+            "label": self.label, "text": self.text, "url": self.url,
+            "meta": dict(self.meta),
+        }

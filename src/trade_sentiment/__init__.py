@@ -13,13 +13,20 @@ An optional FinBERT rescoring seam (``trade_sentiment.finbert``) blends
 the lexicon tone with the ProsusAI/finbert transformer for context the
 lexicon misses.  It needs ``pip install torch transformers`` and degrades
 to pure lexicon when the ML stack is absent.
+
+The point-in-time archive (``trade_sentiment.archive.Archive``) records
+every scored mention with both ``observed_at`` (the as-of time) and
+``recorded_at`` (the fetch time), so sentiment strategies can be
+screened with no lookahead bias.  Pass ``archive=`` to ``scan()`` for
+record-on-fetch.
 """
 
 from __future__ import annotations
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 from .aggregation import aggregate, detect_pops
+from .archive import Archive, DEFAULT_ARCHIVE_PATH
 from .finbert import (
     FinBERTError,
     FinBERTScorer,
@@ -28,6 +35,7 @@ from .finbert import (
     rescore_with_finbert,
 )
 from .models import (
+    ArchivedObservation,
     Mention,
     ScoredMention,
     SentimentLabel,
@@ -38,6 +46,9 @@ from .pipeline import scan
 from .scoring import score_text
 
 __all__ = [
+    "Archive",
+    "ArchivedObservation",
+    "DEFAULT_ARCHIVE_PATH",
     "Mention",
     "ScoredMention",
     "SentimentLabel",

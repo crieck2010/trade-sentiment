@@ -8,11 +8,12 @@ scoring and aggregation are CPU-cheap and stay on the calling thread.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Callable
 
 from . import aggregation as agg
 from . import sources as src
+from .archive import Archive
 from .models import Mention, ScoredMention, SentimentPop
 from .scoring import score_mentions
 
@@ -54,6 +55,7 @@ def scan(
     min_mentions: int = 5,
     limit_per_source: int = 50,
     rescorer: Rescorer | None = None,
+    archive: Archive | None = None,
 ) -> list[SentimentPop]:
     """Scan ``symbols`` for sentiment pops.
 
@@ -66,6 +68,13 @@ def scan(
     ``finbert.finbert_rescorer(blend=0.5)``.  A failing rescorer falls
     back to the lexicon scores for that symbol, so one bad model call
     never kills the scan.
+
+    ``archive`` is an optional ``trade_sentiment.archive.Archive``.
+    When given, every scored mention is recorded (record-on-fetch) with
+    ``observed_at`` = the mention's source publication timestamp and
+    ``recorded_at`` = the fetch time, so the archive stays
+    point-in-time safe.  The default ``None`` keeps the live API
+    unchanged.
     """
     symbols = [s.strip().upper() for s in symbols if s.strip()]
     if not symbols:
@@ -92,4 +101,16 @@ def scan(
         scored_by_symbol[symbol] = scored
         windows.append(agg.burst_window(scored, symbol, start, end,
                                        n_slices=max(baseline_windows, 3)))
+
+    if archive is not None:
+        recorded_at = datetime.now(timezone.utc)
+        scorer = "rescored" if rescorer is not None else "lexicon"
+        for symbol in symbols:
+            for sm in scored_by_symbol[symbol]:
+                try:
+                    archive.record_scored(
+                        sm, recorded_at=recorded_at, scorer=scorer)
+                except Exception:
+                    pass  # archiving must never kill the scan
+
     return agg.detect_pops(windows, scored_by_symbol, min_mentions=min_mentions)

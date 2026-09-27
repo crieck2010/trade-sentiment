@@ -105,6 +105,63 @@ blended  = (1 − β) · lexicon + β · finbert   # β = 0.5 default
 Keep `β ≤ 0.5` until benchmarked on your own labeled chatter. Full
 detail: `docs/FINBERT.md`.
 
+## Point-in-time archive (v0.3.0)
+
+Live feeds alone can't answer "what did sentiment look like *then*, as
+known *then*" — the question every strategy screen actually asks. The
+archive (`trade_sentiment.archive.Archive`, stdlib sqlite3) records
+every scored mention with **two timestamps**:
+
+| Timestamp | Meaning |
+|---|---|
+| `observed_at` | the as-of time the sentiment *refers to* (the source publication timestamp) |
+| `recorded_at` | when the observation *entered the archive* (the fetch time) |
+
+`archive.query(symbol, as_of)` returns **only** observations with
+`recorded_at <= as_of` — the no-lookahead contract, enforced in SQL
+with no opt-out. Filtering on publication time alone is not
+point-in-time safe (a headline published at 09:30 but scraped at 16:00
+can carry 16:00 information).
+
+```python
+from trade_sentiment import Archive, scan
+
+arc = Archive()  # ~/.trade-sentiment/sentiment-archive.db
+pops = scan(["AAPL", "NVDA"], archive=arc)  # record-on-fetch
+
+obs = arc.query("AAPL", as_of="2026-09-25T16:00:00+00:00")
+obs = arc.query_range("AAPL", "2026-09-18T00:00:00+00:00",
+                              "2026-09-25T00:00:00+00:00")
+```
+
+**The maths.** *What you learn:* the difference between "when a thing
+was said" and "when you could have known it". For every observation
+*i*, `observed_i` is the time the sentiment refers to and `recorded_i`
+is the time the archive learned it. A screening decision at decision
+time *D* may use only observations with `recorded_i ≤ D`. *Why it
+matters:* backtests that mix publication time with scrape time
+manufacture information from the future, then "discover" strategies
+that were never tradable. The archive makes that mistake impossible by
+construction, not by convention — `query()` enforces the predicate in
+SQL and cannot be bypassed, and `record()` rejects any write with
+`observed_at > recorded_at`. Full detail: `docs/ARCHIVE.md`.
+
+**Coverage — read this:** the archive accumulates observations from
+deployment forward. **There is no history before the first recorded
+observation, and none is fabricated.** A bounded investigation of
+keyless historical sources (GDELT 2.0) found no clean ticker-addressable
+query path — the DOC 2.0 API rate-refuses programmatic queries and the
+bulk files need multi-GB downloads with noisy org-name matching — so no
+backfill provider ships in v0.3.0. See `docs/BACKFILL.md` for the full
+investigation and what would change it.
+
+```bash
+trade-sentiment scan AAPL NVDA --archive ./sentiment.db
+trade-sentiment archive query AAPL --as-of 2026-09-25T16:00:00+00:00 --db ./sentiment.db
+trade-sentiment archive coverage AAPL --db ./sentiment.db
+trade-sentiment archive prune --days 90 --db ./sentiment.db
+```
+
 ## Sources (v0.1.0)
 
 | Source | Access | Notes |
@@ -145,14 +202,18 @@ trade-sentiment scan SYMBOLS... [--sources reddit stocktwits news]
                                 [--window HOURS] [--min-mentions N]
                                 [--limit N] [--format verdicts|json|ideas|overlay]
                                 [--rescore finbert] [--blend 0.5]
+                                [--archive DB]
 trade-sentiment score [TEXT] [--model lexicon|finbert]   # or pipe via stdin
 trade-sentiment sources
+trade-sentiment archive query SYMBOL --as-of ISO [--db DB] [--sources ...]
+trade-sentiment archive coverage [SYMBOL] [--db DB]
+trade-sentiment archive prune --days N [--db DB]
 trade-sentiment license
 trade-sentiment update-check
 ```
 
 `--config` works both before and after the subcommand; config JSON keys:
-`symbols`, `sources`, `window_hours`, `rescore`, `blend`, `model`.
+`symbols`, `sources`, `window_hours`, `rescore`, `blend`, `model`, `archive`.
 
 ## 3×-daily runner
 
@@ -162,6 +223,11 @@ trade-sentiment update-check
 30 15 * * 1-5 trade-sentiment scan --config sentiment-config.json --format ideas >> ideas.jsonl
 ```
 
+Add `--archive ~/.trade-sentiment/sentiment-archive.db` to the scan line
+(or `"archive": "path"` in the config) and every run also builds the
+point-in-time archive — that is how sentiment history accumulates from
+deployment forward (see `docs/ARCHIVE.md`).
+
 ## Limitations (read these)
 
 - Lexicon scoring is a heuristic, not a model: sarcasm, memes, and novel slang
@@ -170,6 +236,10 @@ trade-sentiment update-check
 - Social chatter skews bullish and noisy; treat pops as *candidates for
   research*, not signals.
 - Free sources are rate-limited and delayed; Reddit/StockTwits can throttle.
+- **No sentiment history before archive deployment.** The archive starts
+  accumulating the day you first run a scan with `--archive`; anything
+  before that does not exist and is never fabricated. See
+  `docs/BACKFILL.md`.
 
 ## Development
 
